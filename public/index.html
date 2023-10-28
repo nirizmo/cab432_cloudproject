@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Transcoding App</title>
+</head>
+<body>
+    <h1>Video Transcoding App</h1>
+    <form id="uploadForm" enctype="multipart/form-data" action="/upload" method="post">
+        <input type="file" name="videoFile" accept="video/*" required>
+        <label for="format">Choose Format:</label>
+        <select id="format" name="format">
+            <option value="mp4">MP4</option>
+            <option value="webm">WebM</option>
+        </select>
+        <label for="bitrate">Choose Bitrate:</label>
+        <input type="number" id="bitrate" name="bitrate" value="1000" required>
+        <label for="resolution">Choose Resolution:</label>
+        <input type="text" id="resolution" name="resolution" value="640x480" required>
+        <label for="generateThumbnail">Generate Thumbnail:</label>
+        <input type="checkbox" id="generateThumbnail" name="generateThumbnail">
+        <button type="submit">Upload and Transcode</button>
+    </form>
+    <div id="progress">
+        <progress id="uploadProgress" value="0" max="100">0%</progress>
+        <progress id="transcodeProgress" value="0" max="100">0%</progress>
+    </div>
+    <div id="message"></div>
+    <a id="downloadLink" style="display: none;" download>Download Transcoded Video</a>
+
+    <script>
+        const uploadForm = document.getElementById("uploadForm");
+        const uploadProgress = document.getElementById("uploadProgress");
+        const transcodeProgress = document.getElementById("transcodeProgress");
+        const message = document.getElementById("message");
+        const downloadLink = document.getElementById("downloadLink");
+
+        uploadForm.addEventListener("submit", (e) => {
+            e.preventDefault();
+
+            // Display upload progress
+            message.innerText = "Uploading...";
+            uploadProgress.value = 0;
+
+            const formData = new FormData(uploadForm);
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/upload");
+            xhr.upload.addEventListener("progress", (e) => {
+                if (e.lengthComputable) {
+                    uploadProgress.value = (e.loaded / e.total) * 100;
+                }
+            });
+
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        // Display transcode progress and message
+                        message.innerText = response.message;
+                        transcodeProgress.value = 0;
+                        if (response.transcoding) {
+                            message.innerText = "Transcoding...";
+                            transcodeProgress.style.display = "block";
+                        } else {
+                            downloadLink.style.display = "block";
+                            downloadLink.href = response.downloadLink;
+                        }
+                    } else {
+                        message.innerText = "Upload failed: " + xhr.status;
+                    }
+                }
+            };
+
+            xhr.send(formData);
+        });
+    </script>
+</body>
+</html>
+
+
