@@ -1,24 +1,23 @@
+require('dotenv').config()
+
 const express = require('express');
 const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
-ffmpeg.setFfmpegPath('/usr/bin/ffmpeg'); // Replace with the actual path to your FFmpeg executable
 const AWS = require('aws-sdk');
-const redis = require('redis');
+const { default: ffmpegPath } = require('ffmpeg-static');
 const app = express();
-require('dotenv').config();
 
 // Configure AWS S3
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   sessionToken: process.env.AWS_SESSION_TOKEN,
-  region: 'ap-southeast-2', // Change to your desired region
+  region: process.env.AWS_REGION,
 });
 
 const s3 = new AWS.S3();
-const s3BucketName = 'n8282935-transcodes'; // Change this to your S3 bucket name
+const s3BucketName = process.env.S3_BUCKET;
 
-// Check if the S3 bucket exists, and create it if not
 async function createS3bucket() {
   try {
     await s3.createBucket( { Bucket: s3BucketName }).promise();
@@ -36,23 +35,22 @@ async function createS3bucket() {
   await createS3bucket();
 })();
 
-// Configure Redis
-const redisClient = redis.createClient();
-
 // Configure multer to use memory storage, as we don't save files locally
 const upload = multer();
 
-// Define routes
-app.use(express.json());
-
 // Serve static files from the "public" directory
 app.use(express.static('public'));
+
+// Define routes
+app.use(express.json());
 
 app.post('/upload', upload.single('videoFile'), (req, res) => {
   const format = req.body.format;
   const bitrate = req.body.bitrate;
   const resolution = req.body.resolution;
   const generateThumbnail = req.body.generateThumbnail;
+
+  console.log("Uploading file...");
 
   // Access the uploaded file from memory
   const uploadedFileBuffer = req.file.buffer;
@@ -64,19 +62,15 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     Body: uploadedFileBuffer,
   };
 
+  console.log("Uploaded file to AWS S3");
+
+  ffmpegPaath = ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
+  console.log(ffmpegPaath)
+
   s3.upload(originalFileParams, (err, originalFileData) => {
     if (err) {
       return res.status(500).send('Failed to upload the original file to S3');
     }
-
-    // Store job progress in Redis
-    const jobId = 'job_' + Date.now(); // Generate a unique job ID
-    const jobStatus = {
-      status: 'processing',
-      progress: 0, // You can update this as the job progresses
-    };
-
-    redisClient.set(jobId, JSON.stringify(jobStatus));
 
     // Transcoding with FFmpeg
     ffmpeg()
@@ -92,6 +86,8 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
           // Generate a thumbnail here if needed
         }
 
+        console.log("Video transcoded");
+
         // Upload the transcoded video to S3
         const transcodedFileParams = {
           Bucket: s3BucketName,
@@ -104,11 +100,6 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
             return res.status(500).send('Failed to upload the transcoded video to S3');
           }
 
-          // Update job status in Redis
-          jobStatus.status = 'completed';
-          jobStatus.progress = 100; // Job is complete
-          redisClient.set(jobId, JSON.stringify(jobStatus));
-
           // Provide download links to the user
           const downloadLink = s3.getSignedUrl('getObject', {
             Bucket: s3BucketName,
@@ -120,33 +111,13 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
             originalFileData,
             transcodedFileData,
             downloadLink,
-            jobId,
           });
         });
       })
       .on('error', (err) => {
         // Handle FFmpeg error
         res.status(500).send('Transcoding failed: ' + err.message);
-
-        // Update job status in Redis
-        jobStatus.status = 'failed';
-        jobStatus.progress = 0;
-        redisClient.set(jobId, JSON.stringify(jobStatus));
       });
-  });
-});
-
-// Get job status from Redis
-app.get('/job/:jobId', (req, res) => {
-  const jobId = req.params.jobId;
-  redisClient.get(jobId, (err, jobStatus) => {
-    if (err) {
-      return res.status(500).send('Failed to retrieve job status from Redis');
-    }
-    if (!jobStatus) {
-      return res.status(404).send('Job not found');
-    }
-    res.json(JSON.parse(jobStatus));
   });
 });
 
