@@ -1,8 +1,10 @@
 require('dotenv').config()
 
 const express = require('express');
+
 const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
+const stream = require('stream');
 const AWS = require('aws-sdk');
 const { default: ffmpegPath } = require('ffmpeg-static');
 const app = express();
@@ -24,7 +26,7 @@ async function createS3bucket() {
     console.log(`Created bucket: ${s3BucketName}`);
   } catch(err) {
     if (err.statusCode === 409) {
-      console.log(`Bucket already exists: ${s3BucketName}`);
+      console.log(`Bucket successfully located: ${s3BucketName}`);
     } else {
       console.log(`Error creating bucket: ${err}`);
     }
@@ -50,7 +52,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
   const resolution = req.body.resolution;
   const generateThumbnail = req.body.generateThumbnail;
 
-  console.log("Uploading file...");
+  console.log("File Uploading...");
 
   // Access the uploaded file from memory
   const uploadedFileBuffer = req.file.buffer;
@@ -61,20 +63,33 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     Key: 'uploads/' + req.file.originalname,
     Body: uploadedFileBuffer,
   };
+  console.log("File uploaded successfully to AWS S3");
 
-  console.log("Uploaded file to AWS S3");
 
-  ffmpegPaath = ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
-  console.log(ffmpegPaath)
+  // Setting a Ffmpeg file path ->> 'uploads/' + req.file.originalname
+  const ffmpegPaath = ffmpeg.setFfmpegPath('uploads/' + req.file.originalname);
+  console.log('uploads/' + req.file.originalname); // Trying t log ffmpegPaath returns undefined...
 
   s3.upload(originalFileParams, (err, originalFileData) => {
     if (err) {
       return res.status(500).send('Failed to upload the original file to S3');
     }
 
-    // Transcoding with FFmpeg
-    ffmpeg()
-      .input(uploadedFileBuffer)
+    // My changes below enable the ffmpeg to correctly execute however the .on param doesn't activate?? : )
+    console.log("Debug testing Execution order: Before Ffmpeg Executes.");
+
+    let readableVideoBuffer = new stream.PassThrough();
+        readableVideoBuffer.write(uploadedFileBuffer);
+        readableVideoBuffer.end();
+
+    //console.log(readableVideoBuffer); //This code returns the PassThrough values of the stream.
+
+    //ffmpeg -i MrStinky.mp4 -movflags faststart -acodec copy -vcodec copy output.mp4
+
+    //Transcoding with FFmpeg
+    //ffmpeg(readableVideoBuffer)
+    ffmpeg('uploads/' + req.file.originalname)
+      .inputFormat("mkv")
       .videoCodec(format)
       .audioCodec('aac')
       .audioBitrate(bitrate)
@@ -85,7 +100,6 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
         if (generateThumbnail) {
           // Generate a thumbnail here if needed
         }
-
         console.log("Video transcoded");
 
         // Upload the transcoded video to S3
@@ -94,12 +108,11 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
           Key: 'transcoded/' + req.file.originalname,
           Body: uploadedFileBuffer, // Use the buffer of the uploaded file
         };
-
+        console.log("Debug testing Execution order 2.");
         s3.upload(transcodedFileParams, (err, transcodedFileData) => {
           if (err) {
             return res.status(500).send('Failed to upload the transcoded video to S3');
           }
-
           // Provide download links to the user
           const downloadLink = s3.getSignedUrl('getObject', {
             Bucket: s3BucketName,
@@ -113,11 +126,8 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
             downloadLink,
           });
         });
-      })
-      .on('error', (err) => {
-        // Handle FFmpeg error
-        res.status(500).send('Transcoding failed: ' + err.message);
       });
+      console.log("Debug testing Execution order: After Ffmpeg Executes.");
   });
 });
 
