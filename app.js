@@ -1,13 +1,11 @@
 require('dotenv').config()
-
 const express = require('express');
-
 const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
 const stream = require('stream');
 const AWS = require('aws-sdk');
-const { default: ffmpegPath } = require('ffmpeg-static');
 const app = express();
+const path = require('path'); // Import the path module
 
 // Configure AWS S3
 AWS.config.update({
@@ -17,9 +15,11 @@ AWS.config.update({
   region: process.env.AWS_REGION,
 });
 
+// Set S3 bucket
 const s3 = new AWS.S3();
 const s3BucketName = process.env.S3_BUCKET;
 
+// Check for S3 Bucket
 async function createS3bucket() {
   try {
     await s3.createBucket( { Bucket: s3BucketName }).promise();
@@ -46,13 +46,14 @@ app.use(express.static('public'));
 // Define routes
 app.use(express.json());
 
+// Function to Upload & Transcode
 app.post('/upload', upload.single('videoFile'), (req, res) => {
   const format = req.body.format;
   const bitrate = req.body.bitrate;
   const resolution = req.body.resolution;
   const generateThumbnail = req.body.generateThumbnail;
 
-  console.log("File Uploading...");
+  console.log("1. File Uploading...");
 
   // Access the uploaded file from memory
   const uploadedFileBuffer = req.file.buffer;
@@ -63,48 +64,38 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     Key: 'uploads/' + req.file.originalname,
     Body: uploadedFileBuffer,
   };
-  console.log("File uploaded successfully to AWS S3");
 
-
-  // Setting a Ffmpeg file path ->> 'uploads/' + req.file.originalname
-  const ffmpegPaath = ffmpeg.setFfmpegPath('uploads/' + req.file.originalname);
-  console.log('uploads/' + req.file.originalname); // Trying to log ffmpegPaath returns undefined...
-
-  let readableVideoBuffer = new stream.PassThrough();
-  readableVideoBuffer.write(uploadedFileBuffer);
-  readableVideoBuffer.end();
+  console.log("2. File uploaded to AWS S3");
 
   s3.upload(originalFileParams, (err, originalFileData) => {
     if (err) {
       return res.status(500).send('Failed to upload the original file to S3');
     }
 
-    // My changes below enable the ffmpeg to correctly execute however the .on param doesn't activate?? : )
-    console.log("Debug testing Execution order: Before Ffmpeg Runs.");
+    const inputVideoPath = path.join('uploads/', req.file.originalname);
 
-    //console.log(readableVideoBuffer); //This code returns the PassThrough values of the stream.
+    const ffmpegPath = process.env.FFMPEG_PATH || '/usr/bin/ffmpeg';
+
     
-    /* Extra Parameters for later implementation
 
+    ffmpeg()
+      .setFfmpegPath(ffmpegPath)
+      .input(inputVideoPath)
+      .inputFormat('mkv')
       .videoCodec(format)
       .audioCodec('aac')
       .audioBitrate(bitrate)
       .videoBitrate(bitrate)
       .size(resolution)
-
-    */
-    //ffmpeg -i MrStinky.mp4 -movflags faststart -acodec copy -vcodec copy output.mp4
-
-    //Transcoding with FFmpeg
-    //ffmpeg('uploads/' + req.file.originalname)
-    ffmpeg(readableVideoBuffer)
-      .inputFormat("mkv")
-      .on('codecData', () => {
+      .on('start', () => {
+        console.log("3. Video loaded into ffmpeg")
+      })
+      .on('end', () => {
+        console.log("4. Video transcoded");
         // Transcoding complete
         if (generateThumbnail) {
           // Generate a thumbnail here if needed
-        }
-        console.log("Video transcoded");
+        }       
 
         // Upload the transcoded video to S3
         const transcodedFileParams = {
@@ -112,7 +103,9 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
           Key: 'transcoded/' + req.file.originalname,
           Body: uploadedFileBuffer, // Use the buffer of the uploaded file
         };
-        console.log("Debug testing Execution order 2.");
+
+        console.log("5. Transcoded video uploaded");
+
         s3.upload(transcodedFileParams, (err, transcodedFileData) => {
           if (err) {
             return res.status(500).send('Failed to upload the transcoded video to S3');
@@ -130,8 +123,15 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
             downloadLink,
           });
         });
-      });
-      console.log("Debug testing Execution order: After Ffmpeg Runs.");
+        console.log("Debug testing Execution order: After Ffmpeg Executes.");
+      })
+      .on('error', (err) => {
+        console.error('FFmpeg error:', err);
+      })
+      .on('stderr', (stderr) => {
+        console.error('FFmpeg stderr:', stderr);
+      })
+      .pipe();
   });
 });
 
