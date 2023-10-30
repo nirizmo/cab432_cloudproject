@@ -68,7 +68,11 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
 
   // Setting a Ffmpeg file path ->> 'uploads/' + req.file.originalname
   const ffmpegPaath = ffmpeg.setFfmpegPath('uploads/' + req.file.originalname);
-  console.log('uploads/' + req.file.originalname); // Trying t log ffmpegPaath returns undefined...
+  console.log('uploads/' + req.file.originalname); // Trying to log ffmpegPaath returns undefined...
+
+  let readableVideoBuffer = new stream.PassThrough();
+  readableVideoBuffer.write(uploadedFileBuffer);
+  readableVideoBuffer.end();
 
   s3.upload(originalFileParams, (err, originalFileData) => {
     if (err) {
@@ -76,26 +80,26 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     }
 
     // My changes below enable the ffmpeg to correctly execute however the .on param doesn't activate?? : )
-    console.log("Debug testing Execution order: Before Ffmpeg Executes.");
-
-    let readableVideoBuffer = new stream.PassThrough();
-        readableVideoBuffer.write(uploadedFileBuffer);
-        readableVideoBuffer.end();
+    console.log("Debug testing Execution order: Before Ffmpeg Runs.");
 
     //console.log(readableVideoBuffer); //This code returns the PassThrough values of the stream.
+    
+    /* Extra Parameters for later implementation
 
-    //ffmpeg -i MrStinky.mp4 -movflags faststart -acodec copy -vcodec copy output.mp4
-
-    //Transcoding with FFmpeg
-    //ffmpeg(readableVideoBuffer)
-    ffmpeg('uploads/' + req.file.originalname)
-      .inputFormat("mkv")
       .videoCodec(format)
       .audioCodec('aac')
       .audioBitrate(bitrate)
       .videoBitrate(bitrate)
       .size(resolution)
-      .on('end', () => {
+
+    */
+    //ffmpeg -i MrStinky.mp4 -movflags faststart -acodec copy -vcodec copy output.mp4
+
+    //Transcoding with FFmpeg
+    //ffmpeg('uploads/' + req.file.originalname)
+    ffmpeg(readableVideoBuffer)
+      .inputFormat("mkv")
+      .on('codecData', () => {
         // Transcoding complete
         if (generateThumbnail) {
           // Generate a thumbnail here if needed
@@ -127,7 +131,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
           });
         });
       });
-      console.log("Debug testing Execution order: After Ffmpeg Executes.");
+      console.log("Debug testing Execution order: After Ffmpeg Runs.");
   });
 });
 
