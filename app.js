@@ -87,8 +87,8 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     //ffmpeg -i MrStinky.mp4 -movflags faststart -acodec copy -vcodec copy output.mp4
 
     //Transcoding with FFmpeg
-    //ffmpeg(readableVideoBuffer)
-    ffmpeg('uploads/' + req.file.originalname)
+    ffmpeg(readableVideoBuffer)
+    //ffmpeg('uploads/' + req.file.originalname)
       .inputFormat("mkv")
       .videoCodec(format)
       .audioCodec('aac')
