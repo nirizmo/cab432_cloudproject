@@ -53,6 +53,21 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
   const resolution = req.body.resolution;
   const generateThumbnail = req.body.generateThumbnail;
 
+  let videoCodec;
+  let fileExtension;
+
+  if (format === 'mp4') {
+    videoCodec = 'libx264';
+    fileExtension = 'mp4';
+  } else if (format === 'mkv') {
+    videoCodec = 'libx265';
+    fileExtension = 'mkv';
+  } else {
+    // Default values in case format is not recognized
+    videoCodec = 'libx264';
+    fileExtension = 'mp4';
+  }
+
   console.log("1. File Uploading...");
 
   // Access the uploaded file from memory
@@ -73,8 +88,10 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     }
 
     //const inputVideoPath = path.join('uploads/', req.file.originalname);
-    const outVideoPath = path.join('uploads/', 'output.mp4');
-    //const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+    //const outVideoPath = path.join('uploads/', req.file.originalname);
+
+    //const formatExtension = format === 'mp4' ? 'mp4' : 'mkv';
+    const outVideoPath = path.join('uploads/', `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${fileExtension}`);
 
     const ffmpegPath = path.join(__dirname, 'ffmpeg', 'ffmpeg'); // Assuming 'ffmpeg.exe' is in a 'ffmpeg' subdirectory of your root directory
 
@@ -87,8 +104,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
 
     ffmpeg(readableVideoBuffer)
       .setFfmpegPath(ffmpegPath)
-      .inputFormat('mp4')
-      .videoCodec('libx264')
+      .videoCodec(videoCodec)
       .audioCodec('aac')
       .audioBitrate(bitrate)
       .videoBitrate(bitrate)
@@ -129,7 +145,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
             downloadLink,
           });
         });
-        console.log("Debug testing Execution order: After Ffmpeg Executes.");
+        console.log("6. Process completed");
       })
       .on('error', (err) => {
         console.error('FFmpeg error:', err);
