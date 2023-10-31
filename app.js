@@ -72,7 +72,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
       return res.status(500).send('Failed to upload the original file to S3');
     }
 
-    const inputVideoPath = path.join('uploads/', req.file.originalname);
+    //const inputVideoPath = path.join('uploads/', req.file.originalname);
     const outVideoPath = path.join('uploads/', 'output.mp4');
     //const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
@@ -81,16 +81,18 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     // Now you can use 'ffmpegPath' to reference the FFmpeg executable in your Node.js application
     console.log('Path to FFmpeg:', ffmpegPath);
 
-    ffmpeg()
+    let readableVideoBuffer = new stream.PassThrough();
+    readableVideoBuffer.write(uploadedFileBuffer);
+    readableVideoBuffer.end();
+
+    ffmpeg(readableVideoBuffer)
       .setFfmpegPath(ffmpegPath)
-      .input(inputVideoPath)
       .inputFormat('mp4')
       .videoCodec('libx264')
       .audioCodec('aac')
       .audioBitrate(bitrate)
       .videoBitrate(bitrate)
       .size(resolution)
-      .save(outVideoPath)
       .on('start', () => {
         console.log("3. Video loaded into ffmpeg")
       })
@@ -132,10 +134,8 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
       .on('error', (err) => {
         console.error('FFmpeg error:', err);
       })
-      .on('stderr', (stderr) => {
-        console.error('FFmpeg stderr:', stderr);
-      })
-      .pipe();
+      //.on('stderr', (stderr) => { console.error('FFmpeg stderr:', stderr); })
+      .save(outVideoPath);
   });
 });
 
