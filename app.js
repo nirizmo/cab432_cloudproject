@@ -73,7 +73,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     }
 
     const inputVideoPath = path.join('uploads/', req.file.originalname);
-
+    const outVideoPath = path.join('uploads/', 'output.mp4');
     //const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
 
     const ffmpegPath = path.join(__dirname, 'ffmpeg', 'ffmpeg'); // Assuming 'ffmpeg.exe' is in a 'ffmpeg' subdirectory of your root directory
@@ -81,17 +81,16 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     // Now you can use 'ffmpegPath' to reference the FFmpeg executable in your Node.js application
     console.log('Path to FFmpeg:', ffmpegPath);
 
-    
-
     ffmpeg()
       .setFfmpegPath(ffmpegPath)
       .input(inputVideoPath)
       .inputFormat('mp4')
-      .videoCodec(format)
+      .videoCodec('libx264')
       .audioCodec('aac')
       .audioBitrate(bitrate)
       .videoBitrate(bitrate)
       .size(resolution)
+      .save(outVideoPath)
       .on('start', () => {
         console.log("3. Video loaded into ffmpeg")
       })
