@@ -53,7 +53,6 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
   const format = req.body.format;
   const bitrate = req.body.bitrate;
   const resolution = req.body.resolution;
-  const generateThumbnail = req.body.generateThumbnail;
 
   let videoCodec;
 
