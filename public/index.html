@@ -9,16 +9,41 @@
         <input type="file" name="videoFile" accept="video/*" required>
         <label for="format">Choose Format:</label>
         <select id="format" name="format">
-            <option value="mp4">MP4</option>
-            <option value="mkv">MKV</option>
+            <option value="mp4">mp4</option>
+            <option value="mov">mov</option>
+            <option value="avi">avi</option>
         </select>
+
         <label for="bitrate">Choose Bitrate:</label>
-        <input type="number" id="bitrate" name="bitrate" value="1000" required>
+        <input type="range" id="bitrate" name="bitrate" min="100" max="5000" step="100" value="1000" required>
+        <output for="bitrate" id="bitrateOutput">1000</output> kbps
+
         <label for="resolution">Choose Resolution:</label>
-        <input type="text" id="resolution" name="resolution" value="640x480" required>
-        <label for="generateThumbnail">Generate Thumbnail:</label>
-        <input type="checkbox" id="generateThumbnail" name="generateThumbnail">
-        <button type="submit">Upload and Transcode</button>
+        <select id="resolution" name="resolution">
+            <optgroup label="4:3">
+                <option value="320x240">320x240</option>
+                <option value="480x360">480x360</option>
+                <option value="640x480">640x480</option>
+                <option value="800x600">800x600</option>
+                <option value="1024x768">1024x768</option>
+                <option value="1280x960">1280x960</option>
+                <option value="1600x1200">1600x1200</option>
+                <option value="2048x1536">2048x1536</option>
+            </optgroup>
+            <optgroup label="16:9">
+                <option value="640x360">640x360</option>
+                <option value="854x480">854x480</option>
+                <option value="1280x720">1280x720</option>
+                <option value="1366x768">1366x768</option>
+                <option value="1600x900">1600x900</option>
+                <option value="1920x1080">1920x1080</option>
+                <option value="2560x1440">2560x1440</option>
+                <option value="3840x2160">3840x2160</option>
+                <option value="5120x2880">5120x2880</option>
+            </optgroup>
+        </select>
+        </select>
+        <button type="submit">Transcode</button>
     </form>
     <div id="progress">
         <progress id="uploadProgress" value="0" max="100">0%</progress>
@@ -33,6 +58,13 @@
         const transcodeProgress = document.getElementById("transcodeProgress");
         const message = document.getElementById("message");
         const downloadLink = document.getElementById("downloadLink");
+
+        const bitrateInput = document.getElementById("bitrate");
+        const bitrateOutput = document.getElementById("bitrateOutput");
+
+        bitrateInput.addEventListener("input", () => {
+        bitrateOutput.textContent = bitrateInput.value + " kbps";
+    });
 
         uploadForm.addEventListener("submit", (e) => {
             e.preventDefault();
