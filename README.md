@@ -2,9 +2,9 @@
 
 ## 1. Install dependencies
 
-`sudo apt update
-sudo apt install git
-sudo snap install node --classic
+`sudo apt update<br />
+sudo apt install git<br />
+sudo snap install node --classic<br />
 sudo npm install -g pm2`
 
 ## 2. Git clone the repo
