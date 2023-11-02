@@ -8,6 +8,20 @@ const app = express();
 const path = require('path'); // Import the path module
 const fs = require('fs');
 const uuid = require('uuid');
+const redis = require('redis');
+
+const REDIS_QUEUE_KEY = 'video_queue';
+const MAX_CONCURRENT_ENCODINGS = 2;
+
+const redisClient = redis.createClient();
+
+redisClient.on('connect', () => {
+  console.log('Connected to Redis');
+});
+
+redisClient.on('error', (err) => {
+  console.error('Redis error: ' + err);
+});
 
 // Configure AWS S3
 AWS.config.update({
@@ -49,7 +63,7 @@ app.use(express.static('public'));
 app.use(express.json());
 
 // Function to Upload & Transcode
-app.post('/upload', upload.single('videoFile'), (req, res) => {
+function processVideoUpload(req, res) {
   
   const format = req.body.format;
   const bitrate = req.body.bitrate;
@@ -162,13 +176,41 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
           console.error('Error deleting local video file:', err);
         }
 
+        // Process the next video in the queue
+        processNextVideoInQueue();
+
         
       })
       .on('error', (err) => {
         console.error('FFmpeg error:', err);
+        processNextVideoInQueue();
       })
       //.on('stderr', (stderr) => { console.error('FFmpeg stderr:', stderr); })
       .save(outVideoPath);
+  });
+}
+
+// Function to process the next video in the queue
+function processNextVideoInQueue() {
+  redisClient.lPop(REDIS_QUEUE_KEY, (err, videoData) => {
+    if (videoData) {
+      const data = JSON.parse(videoData);
+      const req = data.req;
+      const res = data.res;
+      processVideoUpload(req, res);
+    }
+  });
+}
+
+// Handle video upload requests
+app.post('/upload', (req, res) => {
+  const videoData = { req, res };
+  redisClient.lLen(REDIS_QUEUE_KEY, (err, queueLength) => {
+    if (queueLength < MAX_CONCURRENT_ENCODINGS) {
+      processVideoUpload(req, res);
+    } else {
+      redisClient.rPush(REDIS_QUEUE_KEY, JSON.stringify(videoData));
+    }
   });
 });
 

@@ -6,6 +6,7 @@ Below is how to load the application into a ubuntu box where we will be running 
 
 ### 1. Install the dependencies
 `sudo apt update`\
+`sudo apt-get install redis`\
 `sudo apt install ffmpeg`\
 `sudo snap install node --classic`\
 `sudo npm install -f pm2`
