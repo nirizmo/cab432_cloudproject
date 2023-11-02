@@ -1,27 +1,14 @@
-require('dotenv').config()
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
 const stream = require('stream');
 const AWS = require('aws-sdk');
 const app = express();
-const path = require('path'); // Import the path module
+const path = require('path');
 const fs = require('fs');
 const uuid = require('uuid');
 const redis = require('redis');
-
-const REDIS_QUEUE_KEY = 'video_queue';
-const MAX_CONCURRENT_ENCODINGS = 2;
-
-const redisClient = redis.createClient();
-
-redisClient.on('connect', () => {
-  console.log('Connected to Redis');
-});
-
-redisClient.on('error', (err) => {
-  console.error('Redis error: ' + err);
-});
 
 // Configure AWS S3
 AWS.config.update({
@@ -38,9 +25,9 @@ const s3BucketName = process.env.S3_BUCKET;
 // Check for S3 Bucket
 async function createS3bucket() {
   try {
-    await s3.createBucket( { Bucket: s3BucketName }).promise();
+    await s3.createBucket({ Bucket: s3BucketName }).promise();
     console.log(`Created bucket: ${s3BucketName}`);
-  } catch(err) {
+  } catch (err) {
     if (err.statusCode === 409) {
       console.log(`Bucket successfully located: ${s3BucketName}`);
     } else {
@@ -53,8 +40,8 @@ async function createS3bucket() {
   await createS3bucket();
 })();
 
-// Configure multer to use memory storage, as we don't save files locally
-const upload = multer();
+// Configure Redis
+const redisClient = redis.createClient();
 
 // Serve static files from the "public" directory
 app.use(express.static('public'));
@@ -62,35 +49,57 @@ app.use(express.static('public'));
 // Define routes
 app.use(express.json());
 
+// Configure multer to use memory storage, as we don't save files locally
+const upload = multer();
+
 // Function to Upload & Transcode
-function processVideoUpload(req, res) {
-  
-  const format = req.body.format;
-  const bitrate = req.body.bitrate;
-  const resolution = req.body.resolution;
+app.post('/upload', upload.array('videoFile', 2), (req, res) => {
+  const videoFiles = req.files;
+  const formats = req.body.format;
+  const bitrates = req.body.bitrate;
+  const resolutions = req.body.resolution;
 
-  let videoCodec;
+  const tasks = [];
 
-  if (format === 'mp4') {
-    videoCodec = 'libx264';
-  } else if (format === 'mov') {
-    videoCodec = 'libx264';
-  } else if (format === 'avi') {
-    videoCodec = 'libxvid';
-  } else {
-    videoCodec = 'libx264';
-  }
+  videoFiles.forEach((file, index) => {
+    const format = formats[index];
+    const bitrate = bitrates[index];
+    const resolution = resolutions[index];
+
+    const task = {
+      file,
+      format,
+      bitrate,
+      resolution,
+    };
+
+    tasks.push(task);
+  });
+
+  // Push the tasks to a Redis queue
+  tasks.forEach((task) => {
+    redisClient.lpush('video_processing_queue', JSON.stringify(task));
+  });
+
+  res.json({
+    message: 'Video processing tasks added to the queue',
+  });
+});
+
+// Worker function to process video tasks
+function processVideoTask(task) {
+  const { file, format, bitrate, resolution } = task;
 
   console.log("1. File Uploading...");
 
   // Access the uploaded file from memory
-  const uploadedFileBuffer = req.file.buffer;
+  const uploadedFileBuffer = file.buffer;
 
   // Generate a unique identifier using uuid
   const uniqueIdentifier = uuid.v4();
 
-  // Append the unique identifier to file name
-  const originalFileName = req.file.originalname;
+  // Append the unique identifier to the file name
+  const originalFileName = file.originalname;
   const extname = path.extname(originalFileName);
   const baseName = path.basename(originalFileName, extname);
   const modifiedFileName = `${baseName}_${uniqueIdentifier}${extname}`;
@@ -121,7 +130,7 @@ function processVideoUpload(req, res) {
     ffmpeg(readableVideoBuffer)
       .setFfmpegPath(ffmpegPath)
       .outputFormat(format)
-      .videoCodec(videoCodec)
+      .videoCodec('libx264')
       .audioCodec('aac')
       .audioBitrate(bitrate)
       .videoBitrate(bitrate)
@@ -159,60 +168,41 @@ function processVideoUpload(req, res) {
             Key: transcodedFileParams.Key,
           });
 
-          res.json({
+          console.log("6. Process completed");
+
+          try {
+            // Synchronously delete the local video file in the "tmp" directory
+            fs.unlinkSync(outVideoPath);
+            console.log('Local video file deleted');
+          } catch (err) {
+            console.error('Error deleting local video file:', err);
+          }
+
+          console.log({
             message: 'Transcoding complete',
             originalFileData,
             transcodedFileData,
             downloadLink,
           });
         });
-        console.log("6. Process completed");
-
-        try {
-          // Synchronously delete the local video file in the "tmp" directory
-          fs.unlinkSync(outVideoPath);
-          console.log('Local video file deleted');
-        } catch (err) {
-          console.error('Error deleting local video file:', err);
-        }
-
-        // Process the next video in the queue
-        processNextVideoInQueue();
-
-        
       })
       .on('error', (err) => {
         console.error('FFmpeg error:', err);
-        processNextVideoInQueue();
       })
-      //.on('stderr', (stderr) => { console.error('FFmpeg stderr:', stderr); })
       .save(outVideoPath);
   });
 }
 
-// Function to process the next video in the queue
-function processNextVideoInQueue() {
-  redisClient.lPop(REDIS_QUEUE_KEY, (err, videoData) => {
-    if (videoData) {
-      const data = JSON.parse(videoData);
-      const req = data.req;
-      const res = data.res;
-      processVideoUpload(req, res);
+// Listen for video processing tasks in the Redis queue
+function processVideoQueue() {
+  redisClient.lpop('video_processing_queue', (err, task) => {
+    if (!err && task) {
+      processVideoTask(JSON.parse(task));
     }
   });
 }
 
-// Handle video upload requests
-app.post('/upload', (req, res) => {
-  const videoData = { req, res };
-  redisClient.lLen(REDIS_QUEUE_KEY, (err, queueLength) => {
-    if (queueLength < MAX_CONCURRENT_ENCODINGS) {
-      processVideoUpload(req, res);
-    } else {
-      redisClient.rPush(REDIS_QUEUE_KEY, JSON.stringify(videoData));
-    }
-  });
-});
+setInterval(processVideoQueue, 1000); // Check for tasks every second
 
 // Start the Express server
 app.listen(3000, () => {
