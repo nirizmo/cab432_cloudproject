@@ -7,6 +7,7 @@ const AWS = require('aws-sdk');
 const app = express();
 const path = require('path'); // Import the path module
 const fs = require('fs');
+const uuid = require('uuid');
 
 // Configure AWS S3
 AWS.config.update({
@@ -71,10 +72,19 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
   // Access the uploaded file from memory
   const uploadedFileBuffer = req.file.buffer;
 
+  // Generate a unique identifier using uuid
+  const uniqueIdentifier = uuid.v4();
+
+  // Append the unique identifier to file name
+  const originalFileName = req.file.originalname;
+  const extname = path.extname(originalFileName);
+  const baseName = path.basename(originalFileName, extname);
+  const modifiedFileName = `${baseName}_${uniqueIdentifier}${extname}`;
+
   // Upload the original file to S3
   const originalFileParams = {
     Bucket: s3BucketName,
-    Key: 'uploads/' + req.file.originalname,
+    Key: 'uploads/' + modifiedFileName,
     Body: uploadedFileBuffer,
   };
 
@@ -85,7 +95,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
       return res.status(500).send('Failed to upload the original file to S3');
     }
 
-    const outVideoPath = path.join('tmp/', `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${format}`);
+    const outVideoPath = path.join('tmp/', `${path.basename(modifiedFileName, path.extname(modifiedFileName))}.${format}`);
     const ffmpegPath = path.join(__dirname, 'ffmpeg', 'ffmpeg'); // Assuming 'ffmpeg.exe' is in a 'ffmpeg' subdirectory of your root directory
 
     console.log('Path to FFmpeg:', ffmpegPath);
@@ -114,7 +124,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
         }
 
         const transcodedFolder = 'transcodes/';
-        const transcodedFileKey = transcodedFolder + `${path.basename(req.file.originalname, path.extname(req.file.originalname))}.${format}`;
+        const transcodedFileKey = transcodedFolder + `${path.basename(modifiedFileName, path.extname(modifiedFileName))}.${format}`;
 
         // Upload the transcoded video to S3
         const transcodedFileParams = {
