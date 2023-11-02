@@ -1,12 +1,17 @@
-# cab432_cloudproject
+# CAB432 Cloud Project Semester 2, 2023
+This project has been developed by Gabriel Feuilherade and Neil Woodwards.
 
-## 1. Install dependencies
+## How to load the application
+Below is how to load the application into a ubuntu box where we will be running pm2 to automatically start it on boot.
 
-`sudo apt update<br />
-sudo apt install git<br />
-sudo snap install node --classic<br />
-sudo npm install -g pm2`
+### 1. Install the dependencies
+`sudo apt update`\
+`sudo apt install git`\
+`sudo snap install node --classic`\
+`sudo npm install -f pm2`
 
-## 2. Git clone the repo
+### 2. Clone the repo
 
-`git clone https://github.com/nirizmo/cab432_cloudproject`
+`git clone https://github.com/nirizmo/cab432_cloudproject` into `home/ubuntu/`
+
+### 3. Set up PM2
