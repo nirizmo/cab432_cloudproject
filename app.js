@@ -4,9 +4,8 @@ const multer = require('multer');
 const ffmpeg = require('fluent-ffmpeg');
 const stream = require('stream');
 const AWS = require('aws-sdk');
-const redis = require('redis');
 const app = express();
-const path = require('path');
+const path = require('path'); // Import the path module
 const fs = require('fs');
 const uuid = require('uuid');
 
@@ -25,9 +24,9 @@ const s3BucketName = process.env.S3_BUCKET;
 // Check for S3 Bucket
 async function createS3bucket() {
   try {
-    await s3.createBucket({ Bucket: s3BucketName }).promise();
+    await s3.createBucket( { Bucket: s3BucketName }).promise();
     console.log(`Created bucket: ${s3BucketName}`);
-  } catch (err) {
+  } catch(err) {
     if (err.statusCode === 409) {
       console.log(`Bucket successfully located: ${s3BucketName}`);
     } else {
@@ -49,11 +48,9 @@ app.use(express.static('public'));
 // Define routes
 app.use(express.json());
 
-// Initialize Redis client
-const redisClient = redis.createClient();
-
 // Function to Upload & Transcode
 app.post('/upload', upload.single('videoFile'), (req, res) => {
+  
   const format = req.body.format;
   const bitrate = req.body.bitrate;
   const resolution = req.body.resolution;
@@ -99,7 +96,7 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     }
 
     const outVideoPath = path.join('tmp/', `${path.basename(modifiedFileName, path.extname(modifiedFileName))}.${format}`);
-    const ffmpegPath = path.join(__dirname, 'ffmpeg', 'ffmpeg');
+    const ffmpegPath = path.join(__dirname, 'ffmpeg', 'ffmpeg'); // Assuming 'ffmpeg.exe' is in a 'ffmpeg' subdirectory of your root directory
 
     console.log('Path to FFmpeg:', ffmpegPath);
 
@@ -107,90 +104,54 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     readableVideoBuffer.write(uploadedFileBuffer);
     readableVideoBuffer.end();
 
-    // Define a job object
-    const job = {
-      format: format,
-      videoCodec: videoCodec,
-      bitrate: bitrate,
-      resolution: resolution,
-      inputBuffer: uploadedFileBuffer,
-      outVideoPath: outVideoPath,
-      originalFileData: originalFileData,
-      res: res,
-    };
-
-    // Add the job to the Redis queue
-    redisClient.rpush('transcoding_queue', JSON.stringify(job), (redisErr) => {
-      if (redisErr) {
-        console.error('Failed to add job to Redis queue:', redisErr);
-        return res.status(500).send('Failed to add job to queue');
-      }
-    });
-  });
-});
-
-// Function to handle transcoding jobs
-function processTranscodingJob(job) {
-  const {
-    format,
-    videoCodec,
-    bitrate,
-    resolution,
-    inputBuffer,
-    outVideoPath,
-    originalFileData,
-    res,
-  } = job;
-
-  ffmpeg()
-    .input(inputBuffer)
-    .inputFormat('buffer')
-    .inputOption('-f mpegts')
-    .inputFPS(30)
-    .videoCodec(videoCodec)
-    .audioCodec('aac')
-    .audioBitrate(bitrate)
-    .videoBitrate(bitrate)
-    .size(resolution)
-    .output(outVideoPath)
-    .on('end', () => {
-      console.log("4. Video transcoded");
-
-      // Transcoding complete
-
-      const transcodedFolder = 'transcodes/';
-      const transcodedFileKey = transcodedFolder + `${path.basename(
-        outVideoPath,
-        path.extname(outVideoPath)
-      )}.${format}`;
-
-      // Upload the transcoded video to S3
-      const transcodedFileParams = {
-        Bucket: s3BucketName,
-        Key: transcodedFileKey,
-        Body: fs.createReadStream(outVideoPath),
-      };
-
-      console.log("5. Transcoded video uploaded");
-
-      s3.upload(transcodedFileParams, (err, transcodedFileData) => {
-        if (err) {
-          return res.status(500).send('Failed to upload the transcoded video to S3');
+    ffmpeg(readableVideoBuffer)
+      .setFfmpegPath(ffmpegPath)
+      .outputFormat(format)
+      .videoCodec(videoCodec)
+      .audioCodec('aac')
+      .audioBitrate(bitrate)
+      .videoBitrate(bitrate)
+      .size(resolution)
+      .on('start', () => {
+        console.log("3. Video loaded into ffmpeg")
+      })
+      .on('end', () => {
+        console.log("4. Video transcoded");
+        // Transcoding complete
+        
+        function bufferFile(relPath) {
+          return fs.readFileSync(relPath); // zzzz....
         }
 
-        // Provide download links to the user
-        const downloadLink = s3.getSignedUrl('getObject', {
+        const transcodedFolder = 'transcodes/';
+        const transcodedFileKey = transcodedFolder + `${path.basename(modifiedFileName, path.extname(modifiedFileName))}.${format}`;
+
+        // Upload the transcoded video to S3
+        const transcodedFileParams = {
           Bucket: s3BucketName,
-          Key: transcodedFileParams.Key,
-        });
+          Key: transcodedFileKey,
+          Body: bufferFile(outVideoPath), // Use the buffer of the uploaded file
+        };
 
-        res.json({
-          message: 'Transcoding complete',
-          originalFileData,
-          transcodedFileData,
-          downloadLink,
-        });
+        console.log("5. Transcoded video uploaded");
 
+        s3.upload(transcodedFileParams, (err, transcodedFileData) => {
+          if (err) {
+            return res.status(500).send('Failed to upload the transcoded video to S3');
+          }
+          // Provide download links to the user
+          const downloadLink = s3.getSignedUrl('getObject', {
+            Bucket: s3BucketName,
+            Key: transcodedFileParams.Key,
+          });
+
+          res.json({
+            message: 'Transcoding complete',
+            originalFileData,
+            transcodedFileData,
+            downloadLink,
+          });
+        });
         console.log("6. Process completed");
 
         try {
@@ -201,39 +162,15 @@ function processTranscodingJob(job) {
           console.error('Error deleting local video file:', err);
         }
 
-        // Mark the job as completed in Redis
-        redisClient.lrem('transcoding_queue', 0, JSON.stringify(job), (redisErr) => {
-          if (redisErr) {
-            console.error('Failed to remove job from Redis queue:', redisErr);
-          }
-        });
-      });
-    })
-    .on('error', (err) => {
-      console.error('FFmpeg error:', err);
-      res.status(500).send('Transcoding error');
-    })
-    .run();
-}
-
-// Function to process jobs from the Redis queue
-function processQueue() {
-  redisClient.lpop('transcoding_queue', (redisErr, job) => {
-    if (redisErr || !job) {
-      return;
-    }
-
-    try {
-      const parsedJob = JSON.parse(job);
-      processTranscodingJob(parsedJob);
-    } catch (err) {
-      console.error('Failed to parse job from the queue:', err);
-    }
+        
+      })
+      .on('error', (err) => {
+        console.error('FFmpeg error:', err);
+      })
+      //.on('stderr', (stderr) => { console.error('FFmpeg stderr:', stderr); })
+      .save(outVideoPath);
   });
-}
-
-// Set up a timer to continuously process the queue
-setInterval(processQueue, 1000);
+});
 
 // Start the Express server
 app.listen(3000, () => {
