@@ -1,0 +1,8 @@
+/* Base class */
+.callout {
+    padding: 15px;
+    background-color: #f0e9fe;
+    border-left: 5px solid #722ef9;
+    border-radius: 5px;
+    margin: 20px 0;
+  }
