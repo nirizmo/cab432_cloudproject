@@ -88,6 +88,12 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
     Body: uploadedFileBuffer,
   };
 
+  // Generate a pre-signed URL for the uploaded file
+  const signedUrl = s3.getSignedUrl('getObject', {
+  Bucket: s3BucketName,
+  Key: 'uploads/' + modifiedFileName,
+});
+
   console.log("2. File uploaded to AWS S3");
 
   s3.upload(originalFileParams, (err, originalFileData) => {
@@ -100,16 +106,16 @@ app.post('/upload', upload.single('videoFile'), (req, res) => {
 
     console.log('Path to FFmpeg:', ffmpegPath);
 
-    let readableVideoBuffer = new stream.PassThrough();
-    readableVideoBuffer.write(uploadedFileBuffer);
-    readableVideoBuffer.end();
+    //let readableVideoBuffer = new stream.PassThrough();
+    //readableVideoBuffer.write(uploadedFileBuffer);
+    //readableVideoBuffer.end();
 
-    ffmpeg(readableVideoBuffer)
+    ffmpeg(signedUrl)
       .setFfmpegPath(ffmpegPath)
       .outputFormat(format)
       .videoCodec(videoCodec)
       .audioCodec('aac')
-      .audioBitrate(bitrate)
+      //.audioBitrate(bitrate)
       .videoBitrate(bitrate)
       .size(resolution)
       .on('start', () => {
