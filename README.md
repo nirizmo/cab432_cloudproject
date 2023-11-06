@@ -11,5 +11,3 @@ Below is how to load the application into a ubuntu box where we will be running 
 ### 2. Clone the repo
 
 `git clone https://github.com/nirizmo/cab432_cloudproject` into `home/ubuntu/`
-
-### 3. Set up PM2
